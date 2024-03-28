@@ -1,7 +1,8 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TypeApplications #-}
+
+-- {-# LANGUAGE TypeApplications #-}
 
 -- | This module defines the settings and their default values.
 module OpenAPI.Generate.OptParse
@@ -182,7 +183,4 @@ flagsParser =
   where
     footerStr =
       unlines
-        [ "Configuration file format:",
-          "",
-          T.unpack $ renderColouredSchemaViaCodec @Configuration
-        ]
+        []
