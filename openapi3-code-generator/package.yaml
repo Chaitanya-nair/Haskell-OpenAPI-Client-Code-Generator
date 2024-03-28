@@ -28,6 +28,7 @@ dependencies:
 - bytestring
 - split
 - unordered-containers
+- servant
 - scientific
 - mtl
 - transformers

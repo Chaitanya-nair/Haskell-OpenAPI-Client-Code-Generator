@@ -25,8 +25,8 @@ import qualified OpenAPI.Generate.SecurityScheme as SecurityScheme
 import qualified OpenAPI.Generate.Types as OAT
 
 -- | Defines all the operations as functions and the common imports
-defineOperations :: String -> OAT.OpenApiSpecification -> OAM.Generator (Q [Dep.ModuleDefinition], Dep.Models)
-defineOperations moduleName specification =
+defineOperations :: Bool -> Bool -> String -> OAT.OpenApiSpecification -> OAM.Generator (Q [Dep.ModuleDefinition], Dep.Models)
+defineOperations shouldGenTypes shouldGenRoutes moduleName specification =
   let paths = Map.toList $ OAT.openApiSpecificationPaths specification
    in OAM.nested "paths" $ do
         warnAboutUnknownOperations paths
@@ -37,7 +37,7 @@ defineOperations moduleName specification =
               )
               Set.unions
           )
-          . mapAndUnzipM (uncurry $ Operation.defineOperationsForPath moduleName)
+          . mapAndUnzipM (uncurry $ Operation.defineOperationsForPath shouldGenTypes shouldGenRoutes moduleName)
           $ paths
 
 -- | Defines the @defaultURL@ and the @defaultConfiguration@ containing this URL.
@@ -72,16 +72,16 @@ defineConfigurationInformation moduleName spec =
           ]
 
 -- | Defines all models in the components.schemas section of the 'OAT.OpenApiSpecification'
-defineModels :: String -> OAT.OpenApiSpecification -> Dep.Models -> OAM.Generator (Q [Dep.ModuleDefinition])
-defineModels moduleName spec operationDependencies =
+defineModels :: Bool -> String -> OAT.OpenApiSpecification -> Dep.Models -> OAM.Generator (Q [Dep.ModuleDefinition])
+defineModels shouldGenTypes moduleName spec operationDependencies =
   let schemaDefinitions = Map.toList $ OAT.componentsObjectSchemas $ OAT.openApiSpecificationComponents spec
    in OAM.nested "components" $
         OAM.nested "schemas" $ do
           warnAboutUnknownWhiteListedOrOpaqueSchemas schemaDefinitions
-          models <- mapM (uncurry Model.defineModelForSchema) schemaDefinitions
+          (models) <- mapM (uncurry (Model.defineModelForSchema shouldGenTypes)) schemaDefinitions
           whiteListedSchemas <- OAM.getSetting OAO.settingWhiteListedSchemas
           let dependencies = Set.union operationDependencies $ Set.fromList $ fmap transformToModuleName whiteListedSchemas
-          pure $ Dep.getModelModulesFromModelsWithDependencies moduleName dependencies models
+          pure $ Dep.getModelModulesFromModelsWithDependencies moduleName dependencies ((fst <$> models))
 
 -- | Defines all supported security schemes from the 'OAT.OpenApiSpecification'.
 defineSecuritySchemes :: String -> OAT.OpenApiSpecification -> OAM.Generator (Q Doc)

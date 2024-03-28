@@ -40,6 +40,7 @@ examineCode = id
 --
 -- Always generates an error case which is used if no other case matches.
 getResponseDefinitions ::
+  Bool ->
   -- | The operation to generate the response types for
   OAT.OperationObject ->
   -- | A function which appends the passed 'Text' to the operation name and returns it
@@ -47,7 +48,7 @@ getResponseDefinitions ::
   -- | Returns the name of the reponse data type, the response transformation function and the document containing
   -- the definitions of all response types.
   OAM.Generator (Name, Q Exp, Q Doc, Dep.Models)
-getResponseDefinitions operation appendToOperationName = OAM.nested "responses" $ do
+getResponseDefinitions shouldGenTypes operation appendToOperationName = OAM.nested "responses" $ do
   convertToCamelCase <- OAM.getSetting OAO.settingConvertToCamelCase
   responseSuffix <- OAM.getSetting OAO.settingResponseTypeSuffix
   responseBodySuffix <- OAM.getSetting OAO.settingResponseBodyTypeSuffix
@@ -58,7 +59,7 @@ getResponseDefinitions operation appendToOperationName = OAM.nested "responses" 
       responseReferenceCases = getStatusCodeResponseCases responsesObject <> getRangeResponseCases responsesObject
   responseCases <- resolveResponseReferences responseReferenceCases
   let responseDescriptions = getResponseDescription . (\(_, _, (r, _)) -> r) <$> responseCases
-  schemas <- generateResponseCaseDefinitions createBodyName responseCases
+  schemas <- generateResponseCaseDefinitions shouldGenTypes createBodyName responseCases
   let dependencies = Set.unions $ snd . snd <$> Maybe.mapMaybe (\(_, _, x) -> x) schemas
   pure $
     (responseName,createResponseTransformerFn createName schemas,,dependencies) $
@@ -153,12 +154,12 @@ resolveResponseReferences =
 -- | Generate the response definitions
 --
 -- If no response schema is available for a case (or with an unsupported media type), an empty data constructor is used
-generateResponseCaseDefinitions :: (Text -> Text) -> [ResponseCase] -> OAM.Generator [ResponseCaseDefinition]
-generateResponseCaseDefinitions createBodyName =
+generateResponseCaseDefinitions :: Bool -> (Text -> Text) -> [ResponseCase] -> OAM.Generator [ResponseCaseDefinition]
+generateResponseCaseDefinitions shouldGenTypes createBodyName =
   mapM
     ( \(suffix, guard, (r, path)) -> OAM.resetPath path $ do
         (responseSchema, path') <- getResponseSchema r
-        (suffix,guard,) <$> mapM (OAM.resetPath path' . Model.defineModelForSchemaNamed (createBodyName suffix)) responseSchema
+        (suffix,guard,) <$> mapM (OAM.resetPath path' . Model.defineModelForSchemaNamed' shouldGenTypes (createBodyName suffix)) responseSchema
     )
 
 -- | Prints the definitions of the different response case data types in 'Q'

@@ -18,14 +18,16 @@ decodeOpenApi fileName = do
   res <- decodeFileEither $ T.unpack fileName
   case res of
     Left exc -> die $ "Could not parse OpenAPI specification '" <> T.unpack fileName <> "': " <> show exc
-    Right o -> pure o
+    Right o -> do
+      writeFile ("Sample") (show o)
+      pure o
 
 -- | Run the generator as CLI
 runGenerator :: IO ()
 runGenerator = do
   settings <- OAO.getSettings
   spec <- decodeOpenApi $ OAO.settingOpenApiSpecification settings
-  outFiles@OAI.OutputFiles {..} <- OAI.generateFilesToCreate spec settings
+  outFiles@OAI.OutputFiles {..} <- OAI.generateFilesToCreate False spec settings
   if OAO.settingDryRun settings
     then
       mapM_

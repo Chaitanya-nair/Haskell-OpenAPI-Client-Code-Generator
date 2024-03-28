@@ -41,7 +41,8 @@ data SchemaObject = SchemaObject
     schemaObjectUniqueItems :: Bool,
     schemaObjectMaxProperties :: Maybe Word,
     schemaObjectMinProperties :: Maybe Word,
-    schemaObjectRequired :: Set Text,
+    schemaObjectRequired :: Bool,
+    schemaObjectValue :: Maybe Value,
     schemaObjectEnum :: [Value],
     schemaObjectAllOf :: [Schema],
     schemaObjectOneOf :: [Schema],
@@ -84,7 +85,8 @@ instance FromJSON SchemaObject where
       <*> o .:? "uniqueItems" .!= False
       <*> o .:? "maxProperties"
       <*> o .:? "minProperties"
-      <*> o .:? "required" .!= Set.empty
+      <*> o .:? "required" .!= False
+      <*> o .:? "value"
       <*> o .:? "enum" .!= []
       <*> o .:? "allOf" .!= []
       <*> o .:? "oneOf" .!= []
@@ -110,6 +112,7 @@ defaultSchema =
   SchemaObject
     { schemaObjectType = SchemaTypeObject,
       schemaObjectTitle = Nothing,
+      schemaObjectValue = Nothing,
       schemaObjectMultipleOf = Nothing,
       schemaObjectMaximum = Nothing,
       schemaObjectExclusiveMaximum = False,
@@ -123,7 +126,7 @@ defaultSchema =
       schemaObjectUniqueItems = False,
       schemaObjectMaxProperties = Nothing,
       schemaObjectMinProperties = Nothing,
-      schemaObjectRequired = Set.empty,
+      schemaObjectRequired = False,
       schemaObjectEnum = [],
       schemaObjectAllOf = [],
       schemaObjectOneOf = [],

@@ -1,2 +1,1 @@
-packages: */*.cabal
-test-show-details: direct
+packages: ./openapi3-code-generator/openapi3-code-generator.cabal

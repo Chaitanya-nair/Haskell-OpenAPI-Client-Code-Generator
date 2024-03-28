@@ -1,14 +1,16 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskellQuotes #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeOperators #-}
 
 -- | Contains the functionality to define operation functions for path items.
-module OpenAPI.Generate.Operation
-  ( defineOperationsForPath,
-  )
-where
+module OpenAPI.Generate.Operation where
+
+-- ( defineOperationsForPath,
+-- )
 
 import qualified Control.Applicative as Applicative
 import Control.Monad
@@ -19,6 +21,7 @@ import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
 import Language.Haskell.TH
+import Language.Haskell.TH.Lib
 import Language.Haskell.TH.PprLib hiding ((<>))
 import qualified OpenAPI.Common as OC
 import qualified OpenAPI.Generate.Doc as Doc
@@ -30,6 +33,12 @@ import qualified OpenAPI.Generate.Monad as OAM
 import qualified OpenAPI.Generate.OptParse as OAO
 import qualified OpenAPI.Generate.Response as OAR
 import qualified OpenAPI.Generate.Types as OAT
+import Servant (EmptyAPI, Header, JSON, Post, ReqBody, (:<|>) (..), (:>))
+import qualified Servant as Servant.API.ContentTypes
+import qualified Servant as Servant.API.Header
+import qualified Servant as Servant.API.ReqBody
+import qualified Servant as Servant.API.Sub
+import qualified Servant as Servant.API.Verbs
 
 #if MIN_VERSION_template_haskell(2,17,0)
 nameToTypeVariable :: Name -> Q (TyVarBndr Specificity)
@@ -40,12 +49,12 @@ nameToTypeVariable monadName = pure $ plainTV monadName
 #endif
 
 -- | Defines the operations for all paths and their methods
-defineOperationsForPath :: String -> Text -> OAT.PathItemObject -> OAM.Generator (Q [Dep.ModuleDefinition], Dep.Models)
-defineOperationsForPath mainModuleName requestPath pathItemObject = OAM.nested requestPath $ do
+defineOperationsForPath :: Bool -> Bool -> String -> Text -> OAT.PathItemObject -> OAM.Generator (Q [Dep.ModuleDefinition], Dep.Models)
+defineOperationsForPath shouldGenTypes shouldGenRoutes mainModuleName requestPath pathItemObject = OAM.nested requestPath $ do
   operationsToGenerate <- OAM.getSetting OAO.settingOperationsToGenerate
   fmap (BF.bimap sequence Set.unions)
     . mapAndUnzipM
-      (uncurry (defineModuleForOperation mainModuleName requestPath))
+      (uncurry (defineModuleForOperation shouldGenTypes shouldGenRoutes mainModuleName requestPath))
     $ filterEmptyAndOmittedOperations
       operationsToGenerate
       [ ("GET", OAT.pathItemObjectGet pathItemObject),
@@ -71,6 +80,8 @@ filterEmptyAndOmittedOperations operationsToGenerate xs =
 --
 --  Returns a commented function definition and implementation in a Q Monad
 defineModuleForOperation ::
+  Bool ->
+  Bool ->
   -- | The main module name passed via CLI options
   String ->
   -- | The path to the request (This is the key from the map of Operations)
@@ -82,17 +93,17 @@ defineModuleForOperation ::
   OAT.OperationObject ->
   -- | commented function definition and implementation
   OAM.Generator (Q Dep.ModuleDefinition, Dep.Models)
-defineModuleForOperation mainModuleName requestPath method operation = OAM.nested method $ do
+defineModuleForOperation shouldGenTypes shouldGenRoutes mainModuleName requestPath method operation = OAM.nested method $ do
   operationIdName <- getOperationName requestPath method operation
   convertToCamelCase <- OAM.getSetting OAO.settingConvertToCamelCase
   let operationIdAsText = T.pack $ show operationIdName
       appendToOperationName = ((T.pack $ nameBase operationIdName) <>)
-      moduleName = haskellifyText convertToCamelCase True operationIdAsText
+      moduleName = if shouldGenTypes then haskellifyText convertToCamelCase True "Types" else haskellifyText convertToCamelCase True "Transforms"
   OAM.logInfo $ "Generating operation with name '" <> operationIdAsText <> "'"
   (bodySchema, bodyPath) <- getBodySchemaFromOperation operation
-  (responseTypeName, responseTransformerExp, responseBodyDefinitions, responseBodyDependencies) <- OAR.getResponseDefinitions operation appendToOperationName
-  (bodyType, (bodyDefinition, bodyDependencies)) <- OAM.resetPath bodyPath $ getBodyType bodySchema appendToOperationName
-  parameterCardinality <- generateParameterTypeFromOperation operationIdAsText operation
+  (responseTypeName, responseTransformerExp, responseBodyDefinitions, responseBodyDependencies) <- OAR.getResponseDefinitions shouldGenTypes operation appendToOperationName
+  (bodyType, (bodyDefinition, bodyDependencies)) <- OAM.resetPath bodyPath $ getBodyType shouldGenTypes bodySchema appendToOperationName
+  parameterCardinality <- generateParameterTypeFromOperation shouldGenTypes operationIdAsText operation
   paramDescriptions <-
     (<> ["The request body to send" | not $ null bodyType])
       <$> ( case parameterCardinality of
@@ -135,10 +146,9 @@ defineModuleForOperation mainModuleName requestPath method operation = OAM.neste
           ]
       description = Doc.escapeText $ getOperationDescription operation
       comments =
-        [ [operationDescription [description]],
-          [paramDoc, bodyDefinition, responseBodyDefinitions, operationDescription ["The same as '" <> operationIdAsText <> "' but accepts an explicit configuration."]],
-          [operationDescription ["The same as '" <> operationIdAsText <> "' but returns the raw 'Data.ByteString.ByteString'."]],
-          [operationDescription ["The same as '" <> operationIdAsText <> "' but accepts an explicit configuration and returns the raw 'Data.ByteString.ByteString'."]]
+        [ [paramDoc, bodyDefinition, responseBodyDefinitions]
+        -- [operationDescription ["The same as '" <> operationIdAsText <> "' but returns the raw 'Data.ByteString.ByteString'."]],
+        -- [operationDescription ["The same as '" <> operationIdAsText <> "' but accepts an explicit configuration and returns the raw 'Data.ByteString.ByteString'."]]
         ]
   functionDefinitions <-
     mapM
@@ -151,11 +161,12 @@ defineModuleForOperation mainModuleName requestPath method operation = OAM.neste
                       ((if explicitConfiguration then ("The configuration to use in the request" :) else id) $ paramDescriptions <> ["Monadic computation which returns the result of the operation"])
                 )
                   . Doc.breakOnTokens ["->"]
-          functionBody <- defineOperationFunction explicitConfiguration fnName parameterCardinality requestPath method bodySchema transformExp
-          pure [fmap addCommentsToFnSignature fnSignature `Doc.appendDoc` functionBody]
+          let functionBody = generateAuthenticateAPI [("Content-Type", "Text"), ("x-trace-id", "Text")] "/jfs/v1/app/authenticate" "" "" -- defineOperationFunction explicitConfiguration fnName parameterCardinality requestPath method bodySchema transformExp
+          pure []
       )
       availableOperationCombinations
   omitAdditionalFunctions <- OAM.getSetting OAO.settingOmitAdditionalOperationFunctions
+  let toAdd = if shouldGenTypes then [paramDoc, bodyDefinition, responseBodyDefinitions] else [paramDoc, bodyDefinition]
   let content =
         concat $
           if omitAdditionalFunctions
@@ -163,7 +174,7 @@ defineModuleForOperation mainModuleName requestPath method operation = OAM.neste
               zipWith
                 (<>)
                 [ [operationDescription [description]],
-                  [paramDoc, bodyDefinition, responseBodyDefinitions]
+                  toAdd
                 ]
                 $ (<> [[Doc.emptyDoc]])
                 $ maybe [] pure
@@ -180,12 +191,68 @@ defineModuleForOperation mainModuleName requestPath method operation = OAM.neste
       Set.unions [paramDependencies, bodyDependencies, responseBodyDependencies]
     )
 
-getBodyType :: Maybe RequestBodyDefinition -> (Text -> Text) -> OAM.Generator ([Q Type], Dep.ModelContentWithDependencies)
-getBodyType requestBody appendToOperationName = do
+getBodyType :: Bool -> Maybe RequestBodyDefinition -> (Text -> Text) -> OAM.Generator ([Q Type], Dep.ModelContentWithDependencies)
+getBodyType shouldGenTypes requestBody appendToOperationName = do
   generateBody <- shouldGenerateRequestBody requestBody
   case requestBody of
     Just RequestBodyDefinition {..} | generateBody -> do
       let transformType = pure . (if requestBodyDefinitionRequired then id else appT $ varT ''Maybe)
-      requestBodySuffix <- OAM.getSetting OAO.settingRequestBodyTypeSuffix
-      BF.first transformType <$> Model.defineModelForSchemaNamed (appendToOperationName requestBodySuffix) requestBodyDefinitionSchema
+      let requestBodySuffix = "" -- OAM.getSetting OAO.settingRequestBodyTypeSuffix
+      BF.first transformType . fst
+        <$> Model.defineModelForSchemaNamed
+          shouldGenTypes
+          (appendToOperationName requestBodySuffix)
+          requestBodyDefinitionSchema
     _ -> pure ([], (Doc.emptyDoc, Set.empty))
+
+generateRouteSegment :: Text -> [Q Type]
+generateRouteSegment segment = (varT . mkName) . show <$> drop 1 (T.splitOn "/" segment)
+
+-- foldl (\acc val -> appT (appT (acc) (conT ''(:>))) val) (head segmentLit) (drop 1 segmentLit)
+-- appT (appT (conT ''(:>)) segmentLit) (conT ''EmptyAPI)
+
+generateHeaderType :: (String, String) -> Q Type
+generateHeaderType (name, typeName) =
+  [t|Header $(litT $ strTyLit name) $(conT $ mkName typeName)|]
+
+generateAuthenticateAPI :: [(String, String)] -> Text -> String -> String -> Q Doc
+generateAuthenticateAPI headers segment reqType resType = do
+  let headerTypes = map generateHeaderType headers
+  let allTypes =
+        generateRouteSegment segment
+          ++ headerTypes
+          ++ pure (varT $ mkName ("ReqBody '[JSON] " ++ reqType))
+          ++ pure (varT $ mkName ("ReqBody '[JSON] " ++ resType))
+  apiType <- foldl (\acc val -> uInfixT (acc) (mkName ":>") val) (head allTypes) (drop 1 allTypes)
+  -- let routeType = appT (appT (generateRouteSegment segment) (conT ''(:>))) apiType
+  -- reqType <- appT routeType $ appT (appT (appT [t| ReqBody '[JSON] APIRequest |] (conT ''(:>))) [t| Post '[JSON] APIResponse |]) (conT ''(:>))
+  -- apiType <- foldr (\h r -> [t| $h :> $r |]) (appT (conT ''(:>)) reqType `appT` resType) allTypes
+  pure $ ppr [TySynD (mkName "AuthenticateAPI") [] (apiType)]
+
+printTH :: Q Doc -> IO ()
+printTH q = runQ q >>= print
+
+printTH' :: Q Type -> IO ()
+printTH' q = runQ q >>= putStrLn . pprint
+
+-- type AuthenticateAPI = "jfs"
+--     Servant.API.Sub.:> ("v1") Servant.API.Sub.:> ("app") Servant.API.Sub.:> ("authenticate")
+--     Servant.API.Sub.:> (Servant.API.Header.Header "Content-Type" Text)
+--     Servant.API.Sub.:> (Servant.API.Header.Header "x-trace-id" Text)
+--     Servant.API.Sub.:> ReqBody '[JSON] APIRequest
+--     Servant.API.Sub.:> ReqBody '[JSON] APIResponse
+
+-- type AuthenticateAPI = ("jfs") (Servant.API.Sub.:>)
+--                                ("v1")
+--                                (Servant.API.Sub.:>)
+--                                ("app")
+--                                (Servant.API.Sub.:>)
+--                                ("authenticate")
+--                                (Servant.API.Sub.:>)
+--                                (Servant.API.Header.Header "Content-Type" Text)
+--                                (Servant.API.Sub.:>)
+--                                (Servant.API.Header.Header "x-trace-id" Text)
+--                                (Servant.API.Sub.:>)
+--                                ReqBody '[JSON] APIRequest
+--                                (Servant.API.Sub.:>)
+--                                ReqBody '[JSON] APIResponse

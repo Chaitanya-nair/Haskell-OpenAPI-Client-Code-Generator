@@ -82,6 +82,8 @@ library
     , unordered-containers
     , vector
     , yaml
+    , servant
+    , servant-server
   default-language: Haskell2010
 
 executable openapi3-code-generator-exe
@@ -118,6 +120,9 @@ executable openapi3-code-generator-exe
     , unordered-containers
     , vector
     , yaml
+    , servant
+    , servant-server
+
   default-language: Haskell2010
 
 test-suite openapi3-code-generator-test
@@ -169,4 +174,5 @@ test-suite openapi3-code-generator-test
     , validity-text
     , vector
     , yaml
+    , servant
   default-language: Haskell2010

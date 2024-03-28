@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell #-}
 
 module OpenAPI.Generate.IO where
 
@@ -200,31 +199,33 @@ data OutputFiles = OutputFiles
     outputFilesNixFiles :: FilesWithContent
   }
 
-generateFilesToCreate :: OAT.OpenApiSpecification -> OAO.Settings -> IO OutputFiles
-generateFilesToCreate spec settings = do
+generateFilesToCreate :: Bool -> OAT.OpenApiSpecification -> OAO.Settings -> IO OutputFiles
+generateFilesToCreate shouldGenTypes spec settings = do
   let outputDirectory = T.unpack $ OAO.settingOutputDir settings
       moduleName = T.unpack $ OAO.settingModuleName settings
       packageName = T.unpack $ OAO.settingPackageName settings
       env = OAM.createEnvironment settings $ Ref.buildReferenceMap spec
       logMessages = mapM_ (putStrLn . T.unpack) . OAL.filterAndTransformLogs (OAO.settingLogLevel settings)
       showAndReplace = replaceOpenAPI moduleName . show
-      ((operationsQ, operationDependencies), logs) = OAM.runGenerator env $ defineOperations moduleName spec
+      ((operationsQ, operationDependencies), logs) = OAM.runGenerator env $ defineOperations True False moduleName spec
+      ((operationsQ', operationDependencies'), logs') = OAM.runGenerator env $ defineOperations False False ("Tranforms") spec
   logMessages logs
-  operationModules <- runQ operationsQ
+  operationModules' <- runQ operationsQ'
+  operationModules'' <- runQ operationsQ
+  -- let operationDependencies = operationDependencies'' ++ operationDependencies'
+  let operationModules = operationModules'' ++ operationModules'
   configurationInfo <- runQ $ defineConfigurationInformation moduleName spec
-  let (modelsQ, logsModels) = OAM.runGenerator env $ defineModels moduleName spec operationDependencies
+  let (modelsQ, logsModels) = OAM.runGenerator env $ defineModels True moduleName spec operationDependencies
+  let (modelsQ', logsModels') = OAM.runGenerator env $ defineModels False ("Tranforms") spec operationDependencies'
   logMessages logsModels
-  modelModules <- fmap (BF.second showAndReplace) <$> runQ modelsQ
+  modelModules' <- fmap (BF.second showAndReplace) <$> runQ modelsQ
+  modelModules'' <- fmap (BF.second showAndReplace) <$> runQ modelsQ'
+  let modelModules = modelModules' ++ modelModules''
   let (securitySchemesQ, logs') = OAM.runGenerator env $ defineSecuritySchemes moduleName spec
   logMessages logs'
   securitySchemes' <- runQ securitySchemesQ
   let modules =
         fmap (BF.bimap ("Operations" :) showAndReplace) operationModules
-          <> modelModules
-          <> [ (["Configuration"], showAndReplace configurationInfo),
-               (["SecuritySchemes"], showAndReplace securitySchemes'),
-               (["Common"], replaceOpenAPI moduleName $ replaceVersionNumber $(embedFile "src/OpenAPI/Common.hs"))
-             ]
       modulesToExport =
         fmap
           ( (moduleName <>)
@@ -238,10 +239,7 @@ generateFilesToCreate spec settings = do
       hsBootFiles = getHsBootFiles settings modelModules
   pure $
     OutputFiles
-      ( BF.second (unlines . lines)
-          <$> (mainFile, mainModuleContent)
-            : (BF.first ((outputDirectory </>) . (srcDirectory </>) . (moduleName </>) . (<> ".hs") . foldr1 (</>)) <$> modules)
-              <> hsBootFiles
+      ( ((BF.first ((outputDirectory </>) . (srcDirectory </>) . (moduleName </>) . (<> ".hs") . foldr1 (</>)) <$> modules))
       )
       (BF.first (outputDirectory </>) <$> cabalProjectFiles packageName moduleName modulesToExport)
       (BF.first (outputDirectory </>) <$> stackProjectFiles)
@@ -259,14 +257,10 @@ writeFiles settings OutputFiles {..} = do
       tryIOError (removeDirectoryRecursive outputDirectory)
   putStrLn "Output directory removed, create missing directories"
   createDirectoryIfMissing True (outputDirectory </> srcDirectory </> moduleName </> "Operations")
+  createDirectoryIfMissing True (outputDirectory </> srcDirectory </> moduleName </> "OperationsTrans")
   createDirectoryIfMissing True (outputDirectory </> srcDirectory </> moduleName </> "Types")
   putStrLn "Directories created"
   write outputFilesModuleFiles
-  write outputFilesCabalFiles
-  unless (OAO.settingDoNotGenerateStackProject settings) $
-    write outputFilesStackFiles
-  when (OAO.settingGenerateNixFiles settings) $
-    write outputFilesNixFiles
 
 writeFileWithLog :: FileWithContent -> IO ()
 writeFileWithLog (filePath, content) = do

@@ -77,11 +77,11 @@ data ParameterCardinality
   | MultipleParameters ParameterTypeDefinition
 
 -- | Generates the parameter type for an operation. See 'ParameterCardinality' for further information.
-generateParameterTypeFromOperation :: Text -> OAT.OperationObject -> OAM.Generator ParameterCardinality
-generateParameterTypeFromOperation operationName = getParametersFromOperationConcrete >=> generateParameterType operationName
+generateParameterTypeFromOperation :: Bool -> Text -> OAT.OperationObject -> OAM.Generator ParameterCardinality
+generateParameterTypeFromOperation shouldGenTypes operationName = getParametersFromOperationConcrete >=> generateParameterType shouldGenTypes operationName
 
-generateParameterType :: Text -> [(OAT.ParameterObject, [Text])] -> OAM.Generator ParameterCardinality
-generateParameterType operationName parameters = OAM.nested "parameters" $ do
+generateParameterType :: Bool -> Text -> [(OAT.ParameterObject, [Text])] -> OAM.Generator ParameterCardinality
+generateParameterType shouldGenTypes operationName parameters = OAM.nested "parameters" $ do
   maybeSchemas <- mapM (\(p, path) -> OAM.resetPath path $ getSchemaFromParameter p) parameters
   parametersSuffix <- OAM.getSetting OAO.settingParametersTypeSuffix
   let parametersWithSchemas =
@@ -96,7 +96,7 @@ generateParameterType operationName parameters = OAM.nested "parameters" $ do
     [] -> pure NoParameters
     [((parameter, path), schema)] -> do
       -- TODO disable fixed value generation for parameters
-      (paramType, model) <- OAM.resetPath (path <> ["schema"]) $ Model.defineModelForSchemaNamed (schemaName <> uppercaseFirstText (OAT.parameterObjectName parameter)) schema
+      ((paramType, model), _) <- OAM.resetPath (path <> ["schema"]) $ Model.defineModelForSchemaNamed shouldGenTypes (schemaName <> uppercaseFirstText (OAT.parameterObjectName parameter)) schema
       pure $
         SingleParameter
           ( if OAT.parameterObjectRequired parameter
@@ -114,20 +114,18 @@ generateParameterType operationName parameters = OAM.nested "parameters" $ do
           )
           parametersWithSchemas
       let parametersWithNames = zip (fst <$> properties) (fst <$> parametersWithSchemas)
-          requiredProperties =
-            Set.fromList $
-              fst <$> filter (OAT.parameterObjectRequired . fst . snd) parametersWithNames
-      (parameterTypeDefinitionType, (parameterTypeDefinitionDoc, parameterTypeDefinitionDependencies)) <-
+          requiredProperties = any (\x -> T.toUpper x == "true") $ fst <$> filter (OAT.parameterObjectRequired . fst . snd) parametersWithNames
+      ((parameterTypeDefinitionType, (parameterTypeDefinitionDoc, parameterTypeDefinitionDependencies)), _) <-
         -- Explicitly include fixed value properties since this is not
         -- a user defined object schema but one that is defined by the
         -- generator and is only here to make the usage easier.
         -- It should therefore not change the semantics.
         OAM.adjustSettings (\settings -> settings {OAO.settingFixedValueStrategy = FixedValueStrategyInclude}) $
-          Model.defineModelForSchemaNamed schemaName $
+          Model.defineModelForSchemaNamed shouldGenTypes schemaName $
             OAT.Concrete $
               OAS.defaultSchema {OAS.schemaObjectProperties = Map.fromList properties, OAS.schemaObjectRequired = requiredProperties}
       convertToCamelCase <- OAM.getSetting OAO.settingConvertToCamelCase
-      let parametersWithPropertyNames = BF.bimap (haskellifyName convertToCamelCase False . (schemaName <>) . uppercaseFirstText) fst <$> parametersWithNames
+      let parametersWithPropertyNames = BF.bimap (haskellifyName convertToCamelCase False . ("" <>) . uppercaseFirstText) fst <$> parametersWithNames
           filterByType t = filter ((== t) . OAT.parameterObjectIn . snd) parametersWithPropertyNames
           parameterTypeDefinitionQueryParams = filterByType OAT.QueryParameterObjectLocation
           parameterTypeDefinitionPathParams = filterByType OAT.PathParameterObjectLocation
