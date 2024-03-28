@@ -35,6 +35,7 @@ import Data.Time.Calendar
 import Debug.Trace (trace)
 import Language.Haskell.TH
 import Language.Haskell.TH.PprLib hiding ((<>))
+import Language.Haskell.TH.Syntax
 import qualified OpenAPI.Common as OC
 import OpenAPI.Generate.Doc (appendDoc, emptyDoc)
 import qualified OpenAPI.Generate.Doc as Doc
@@ -787,7 +788,7 @@ createMkFunction name propsWithNames bangTypes = do
                           Aeson.Number num -> if show propertyType == "VarT GHC.Types.Double" then pure $ LitE $ IntegerL (Scientific.coefficient num) else [|val|]
                           Aeson.String str -> if show propertyType == "VarT Data.Text.Internal.Text" then pure $ LitE $ StringL (T.unpack str) else [|val|]
                           Aeson.Bool bool -> pure $ ConE $ mkName $ show bool
-                          Aeson.Object obj -> [|obj|]
+                          -- Aeson.Object obj -> [|obj|]
                           _ -> [|val|]
                      in if isRequired then orgVal else AppE (VarE $ mkName "Just") <$> orgVal
                   Nothing -> varE propertyName
