@@ -7,6 +7,7 @@ module OpenAPI.Generate.IO where
 import Control.Exception
 import Control.Monad
 import qualified Data.Bifunctor as BF
+import Data.List.Extra (replace)
 import qualified Data.Text as T
 import Data.Version (showVersion)
 import Language.Haskell.TH
@@ -265,7 +266,25 @@ writeFiles settings OutputFiles {..} = do
 writeFileWithLog :: FileWithContent -> IO ()
 writeFileWithLog (filePath, content) = do
   putStrLn $ "Write file to path: " <> filePath
-  writeFile filePath content
+  writeFile
+    filePath
+    ( replace "Data.Aeson.Encoding.Internal." "Aeson." $
+        replace "Data.ByteString.Internal." "Data.ByteString." $
+          replace "Data.ByteString.Internal.Type." "Data.ByteString." $
+            replace "Data.Aeson.Types." "Aeson." $
+              replace "Data.Aeson.Types.FromJSON." "Aeson." $
+                replace "Data.Aeson.Types.ToJSON." "Aeson." $
+                  replace "Data.Aeson.Types.Internal." "Aeson." $
+                    replace "GHC.Base." "" $
+                      replace "GHC.Classes." "" $
+                        replace "GHC.Int." "" $
+                          replace "GHC.Show." "" $
+                            replace "GHC.Types." "" $
+                              replace "GHC.Integer.Type." "" $
+                                replace "Data.Text." "DT." $
+                                  replace "Data.Text.Internal." "DT." $
+                                    replace "GHC.Maybe." "" content
+    )
 
 writeFileIncremental :: FileWithContent -> IO ()
 writeFileIncremental (filePath, content) = do

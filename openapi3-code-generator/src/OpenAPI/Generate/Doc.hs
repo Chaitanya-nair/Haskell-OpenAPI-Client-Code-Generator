@@ -190,43 +190,19 @@ addOperationsModuleHeader mainModuleName moduleName operationId =
     . moduleDescription ("Contains the different functions to run the operation " <> operationId)
     . moduleDeclaration (mainModuleName <> ".Operations") moduleName
     . emptyLine
-    . importQualified "Prelude as GHC.Integer.Type"
-    . importQualified "Prelude as GHC.Maybe"
     . importQualified "Control.Monad.Fail"
     . importQualified "Control.Monad.Trans.Reader"
     . importQualified "Data.Aeson"
-    . importQualified "Data.Aeson as Data.Aeson.Encoding.Internal"
-    . importQualified "Data.Aeson as Data.Aeson.Types"
-    . importQualified "Data.Aeson as Data.Aeson.Types.FromJSON"
-    . importQualified "Data.Aeson as Data.Aeson.Types.ToJSON"
-    . importQualified "Data.Aeson as Data.Aeson.Types.Internal"
     . importQualified "Data.ByteString"
-    . importQualified "Data.ByteString as Data.ByteString.Internal"
-    . importQualified "Data.ByteString as Data.ByteString.Internal.Type"
     . importQualified "Data.Either"
     . importQualified "Data.Foldable"
     . importQualified "Data.Functor"
     . importQualified "Data.Maybe"
     . importQualified "Data.Scientific"
-    . importQualified "Data.Text"
-    . importQualified "Data.Text as Data.Text.Internal"
+    . importQualified "Data.Text as DT"
     . importQualified "Data.Time.Calendar as Data.Time.Calendar.Days"
     . importQualified "Data.Time.LocalTime as Data.Time.LocalTime.Internal.ZonedTime"
     . importQualified "Data.Vector"
-    . importQualified "GHC.Base"
-    . importQualified "GHC.Classes"
-    . importQualified "GHC.Int"
-    . importQualified "GHC.Show"
-    . importQualified "GHC.Types"
-    . importQualified "Network.HTTP.Client"
-    . importQualified "Network.HTTP.Client as Network.HTTP.Client.Request"
-    . importQualified "Network.HTTP.Client as Network.HTTP.Client.Types"
-    . importQualified "Network.HTTP.Simple"
-    . importQualified "Network.HTTP.Types"
-    . importQualified "Network.HTTP.Types as Network.HTTP.Types.Status"
-    . importQualified "Network.HTTP.Types as Network.HTTP.Types.URI"
-    . importQualified (mainModuleName <> ".Common")
-    . importUnqualified (mainModuleName <> ".Types")
     . emptyLine
 
 -- | Add the module header to a module of a model

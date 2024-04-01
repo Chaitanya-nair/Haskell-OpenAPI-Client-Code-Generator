@@ -1,5 +1,5 @@
 { mkDerivation, aeson, autodocodec, autodocodec-yaml, base
-, bytestring, containers, directory, filepath, genvalidity
+, bytestring, containers, directory, extra, filepath, genvalidity
 , genvalidity-hspec, genvalidity-text, hashmap, hspec, http-client
 , http-conduit, http-types, lib, mtl, optparse-applicative, path
 , path-io, QuickCheck, scientific, servant, servant-server, split
@@ -14,10 +14,10 @@ mkDerivation {
   isExecutable = true;
   libraryHaskellDepends = [
     aeson autodocodec autodocodec-yaml base bytestring containers
-    directory filepath hashmap http-client http-conduit http-types mtl
-    optparse-applicative path path-io scientific servant servant-server
-    split template-haskell text time transformers unordered-containers
-    vector yaml
+    directory extra filepath hashmap http-client http-conduit
+    http-types mtl optparse-applicative path path-io scientific servant
+    servant-server split template-haskell text time transformers
+    unordered-containers vector yaml
   ];
   executableHaskellDepends = [
     aeson autodocodec autodocodec-yaml base bytestring containers
